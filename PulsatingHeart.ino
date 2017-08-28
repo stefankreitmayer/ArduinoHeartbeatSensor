@@ -1,91 +1,87 @@
-const int inputPin = 0;               // Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
-const int ledPin = LED_BUILTIN;                // The on-board Arduion LED
+// This sketch reads from a pulse sensor
+//
+// https://pulsesensor.com/
+// https://www.adafruit.com/product/1093
+//
+// By analysing the signal for peaks it aims to detect heartbeats.
+// An LED flashes whenever a heartbeat is detected.
 
-const int SAMPLING_RATE = 20;   // Hz
-const int SAMPLE_DURATION = 1000 / SAMPLING_RATE; // ms
 
-const int BUFSIZE = 50;         // Depends on update rate
-const int halfBufsize = BUFSIZE / 2; // convenience variable
+// Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
+#define PULSE_SENSOR_PIN 0
+#define LED_PIN LED_BUILTIN
 
-int rawInput;                   // Holds the incoming raw data. Signal value can range from 0-1024
+// Samples per second
+#define SAMPLING_RATE 40
+
+// Milliseconds per sample
+#define SAMPLING_DELAY 1000 / SAMPLING_RATE
+
+// Upper heart rate limit
+#define MIN_MILLIS_BETWEEN_BEATS 280
+
+
+int rawInput;                   // Incoming raw data. Signal value can range from 0-1023
 int previousRawInput;           // Used for DC filter
-int filteredInput;              // Used for DC filter
 int previousFilteredInput;      // Used for DC filter
+int filteredInput;              // The pulse signal with the DC offset removed
 
-long buf[BUFSIZE];              // Used for autocorrelation
-long correlation[halfBufsize];
-int tauStart = BUFSIZE / 6;     // No need to start from 0 because we can ignore very high frequencies
-int writeIndexInBuf = 0;
+int peakEnvelope;               // Remembers the amplitude of the most recent peak (slow decay)
 
-float pulseFrequency;           // Hz
-
-float deltaEnvelope;            // Used for detecting heartbeat onset
-
-float blinkPhase;               // [0...1] looping
+unsigned long millisOfLastBeat;
+unsigned long millisOfLastBlink;
 
 
 void setup() {
-  pinMode(ledPin, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   Serial.begin(9600);
 }
 
 
 void loop() {
+  readInput();
+
+  peakEnvelope = max((int)(peakEnvelope * 0.99), filteredInput);
+  if (peakEnvelope > 20 &&
+      hasEnoughTimePassedSinceTheLastDetectedBeat() &&
+      isPeakInSignal()) {
+    registerBeat();
+    triggerBlink();
+  }
+  digitalWrite(LED_PIN, millisOfLastBlink > millis() - 200 ? HIGH : LOW);
+
+  delay(SAMPLING_DELAY);
+}
+
+
+void readInput() {
   // raw input
   previousRawInput = rawInput;
-  rawInput = analogRead(inputPin);
-    Serial.println(rawInput);
+  rawInput = analogRead(PULSE_SENSOR_PIN);
 
   // filtered input
-  previousFilteredInput = buf[writeIndexInBuf];
-  writeIndexInBuf = (writeIndexInBuf + 1) % BUFSIZE;
+  previousFilteredInput = filteredInput;
   filteredInput = (int) (rawInput - previousRawInput + 0.8 * previousFilteredInput); // remove DC offset
-  buf[writeIndexInBuf] = filteredInput;
-
-  if (writeIndexInBuf == BUFSIZE - 1) {
-    calcPulseFrequency();
-  }
-
-  blinkPhase += SAMPLE_DURATION / 1000.0 * pulseFrequency;
-  if (blinkPhase > 1 || isStrongHeartbeatOnset()) {
-    blinkPhase = 0;
-  }
-  digitalWrite(ledPin, blinkPhase < 0.2 ? HIGH : LOW);
-  delay(SAMPLE_DURATION);
-//  Serial.println(filteredInput);
 }
 
 
-void calcPulseFrequency() {
-  long sum;
-  int tau, i;
-  for (tau = tauStart; tau < halfBufsize; tau++) {
-    sum = 0;
-    for (i = 0; i < halfBufsize; i++) {
-      sum += buf[i] * buf[tau + i];
-    }
-    correlation[tau] = sum;
-  }
-  pulseFrequency = 1000.0 / (correlationPeakIndex() * SAMPLE_DURATION);
-//  Serial.println(pulseFrequency);
+bool isPeakInSignal() {
+  return previousFilteredInput > peakEnvelope * 0.8 &&
+         filteredInput < previousFilteredInput;
 }
 
 
-int correlationPeakIndex() {
-  long peakLevel = 0;
-  int peakIndex = tauStart;
-  for (int tau = tauStart; tau < halfBufsize; tau++) {
-    if (correlation[tau] > peakLevel) {
-      peakLevel = correlation[tau];
-      peakIndex = tau;
-    }
-  }
-  return peakIndex;
+void registerBeat() {
+  millisOfLastBeat = millis();
 }
 
-int isStrongHeartbeatOnset() {
-  int delta = filteredInput - previousFilteredInput;
-  deltaEnvelope = max(deltaEnvelope, delta) * 0.99; // follow the peaks in delta with a smooth decay
-  return delta > deltaEnvelope;
+
+bool triggerBlink() {
+  millisOfLastBlink = millis();
+}
+
+
+bool hasEnoughTimePassedSinceTheLastDetectedBeat() {
+  return millis() - MIN_MILLIS_BETWEEN_BEATS > millisOfLastBeat; // http://black-electronics.com/blog/worried-about-millis-timer-overflow
 }
 
