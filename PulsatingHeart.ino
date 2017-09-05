@@ -40,15 +40,17 @@ void setup() {
 
 void loop() {
   readInput();
+//  Serial.println(rawInput);
+//  Serial.println(filteredInput);
 
-  peakEnvelope = max((int)(peakEnvelope * 0.99), filteredInput);
+  peakEnvelope = max((int)(peakEnvelope * 0.993), filteredInput);
   if (peakEnvelope > 20 &&
       hasEnoughTimePassedSinceTheLastDetectedBeat() &&
       isPeakInSignal()) {
     registerBeat();
     triggerBlink();
   }
-  digitalWrite(LED_PIN, millisOfLastBlink > millis() - 200 ? HIGH : LOW);
+  digitalWrite(LED_PIN, millisOfLastBlink > millis() - 150 ? HIGH : LOW);
 
   delay(SAMPLING_DELAY);
 }
