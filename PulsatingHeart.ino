@@ -8,11 +8,12 @@
 
 
 // Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
-#define PULSE_SENSOR_PIN 0
-#define LED_PIN LED_BUILTIN
+#define MICROPHONE_PIN A0
+#define LAMP_PIN D2
+
 
 // Samples per second
-#define SAMPLING_RATE 40
+#define SAMPLING_RATE 24000
 
 // Milliseconds per sample
 #define SAMPLING_DELAY 1000 / SAMPLING_RATE
@@ -33,24 +34,29 @@ unsigned long millisOfLastBlink;
 
 
 void setup() {
-  pinMode(LED_PIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LAMP_PIN, OUTPUT);
   Serial.begin(9600);
 }
 
 
 void loop() {
   readInput();
-//  Serial.println(rawInput);
-//  Serial.println(filteredInput);
+  //  Serial.println(rawInput);
+  //  Serial.println(filteredInput);
 
-  peakEnvelope = max((int)(peakEnvelope * 0.993), filteredInput);
-  if (peakEnvelope > 20 &&
+  peakEnvelope = max((int)(peakEnvelope * 0.999), filteredInput);
+  //  Serial.println(peakEnvelope);
+
+  if (peakEnvelope > 200 &&
       hasEnoughTimePassedSinceTheLastDetectedBeat() &&
       isPeakInSignal()) {
     registerBeat();
     triggerBlink();
   }
-  digitalWrite(LED_PIN, millisOfLastBlink > millis() - 150 ? HIGH : LOW);
+  bool lampState = millisOfLastBlink > millis() - 150 ? LOW : HIGH;
+  digitalWrite(LED_BUILTIN, lampState);
+  digitalWrite(LAMP_PIN, lampState);
 
   delay(SAMPLING_DELAY);
 }
@@ -59,11 +65,12 @@ void loop() {
 void readInput() {
   // raw input
   previousRawInput = rawInput;
-  rawInput = analogRead(PULSE_SENSOR_PIN);
+  rawInput = analogRead(MICROPHONE_PIN);
 
   // filtered input
   previousFilteredInput = filteredInput;
-  filteredInput = (int) (rawInput - previousRawInput + 0.8 * previousFilteredInput); // remove DC offset
+  filteredInput = rawInput;
+  //  filteredInput = (int) (rawInput - previousRawInput + 0.8 * previousFilteredInput); // remove DC offset
 }
 
 
@@ -80,6 +87,7 @@ void registerBeat() {
 
 bool triggerBlink() {
   millisOfLastBlink = millis();
+  Serial.println("peak!");
 }
 
 
