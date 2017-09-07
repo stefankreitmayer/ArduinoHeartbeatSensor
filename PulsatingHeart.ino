@@ -13,48 +13,61 @@
 
 
 // Samples per second
-#define SAMPLING_RATE 24000
+#define SAMPLING_RATE 1000
 
 // Milliseconds per sample
 #define SAMPLING_DELAY 1000 / SAMPLING_RATE
 
-// Upper heart rate limit
-#define MIN_MILLIS_BETWEEN_BEATS 280
+// Upper limit of blink frequency
+#define MIN_MILLIS_BETWEEN_BEATS 360
+
+// Ensure that blinks never overlap (and that we ignore the audible click made by the closing relay)
+#define BLINK_DURATION (MIN_MILLIS_BETWEEN_BEATS-20)
 
 
-int rawInput;                   // Incoming raw data. Signal value can range from 0-1023
-int previousRawInput;           // Used for DC filter
-int previousFilteredInput;      // Used for DC filter
-int filteredInput;              // The pulse signal with the DC offset removed
+float rawInput;                   // Incoming raw data. Signal value can range from 0-1023
+float previousRawInput;           // Used for DC filter
+float previousFilteredInput;      // Used for DC filter
+float filteredInput;              // The pulse signal with the DC offset removed
+float amplitude;
 
-int peakEnvelope;               // Remembers the amplitude of the most recent peak (slow decay)
+float peakEnvelope;               // Remembers the amplitude of the most recent peak (slow decay)
 
 unsigned long millisOfLastBeat;
 unsigned long millisOfLastBlink;
 
+static unsigned long frameCount;
+
 
 void setup() {
+  pinMode(MICROPHONE_PIN, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LAMP_PIN, OUTPUT);
-  Serial.begin(9600);
+    Serial.begin(9600);
+
+//  Serial.begin(115200);
 }
 
 
 void loop() {
   readInput();
-  //  Serial.println(rawInput);
-  //  Serial.println(filteredInput);
+  peakEnvelope = maxf((peakEnvelope * 0.999), amplitude);
 
-  peakEnvelope = max((int)(peakEnvelope * 0.999), filteredInput);
-  //  Serial.println(peakEnvelope);
 
-  if (peakEnvelope > 200 &&
+  if (++frameCount % 3 == 0) {
+      Serial.println(rawInput);
+   //    Serial.println(amplitude);
+   //    Serial.println(filteredInputL);
+//    Serial.println(peakEnvelope);
+  }
+
+  if (peakEnvelope > 40 &&
       hasEnoughTimePassedSinceTheLastDetectedBeat() &&
       isPeakInSignal()) {
     registerBeat();
     triggerBlink();
   }
-  bool lampState = millisOfLastBlink > millis() - 150 ? LOW : HIGH;
+  bool lampState = millisOfLastBlink > millis() - BLINK_DURATION ? HIGH : LOW;
   digitalWrite(LED_BUILTIN, lampState);
   digitalWrite(LAMP_PIN, lampState);
 
@@ -63,14 +76,16 @@ void loop() {
 
 
 void readInput() {
+  
   // raw input
   previousRawInput = rawInput;
   rawInput = analogRead(MICROPHONE_PIN);
 
   // filtered input
   previousFilteredInput = filteredInput;
-  filteredInput = rawInput;
-  //  filteredInput = (int) (rawInput - previousRawInput + 0.8 * previousFilteredInput); // remove DC offset
+  filteredInput = (int) (rawInput - previousRawInput + 0.99999 * previousFilteredInput); // remove DC offset
+
+  amplitude = abs(filteredInput);
 }
 
 
@@ -93,5 +108,10 @@ bool triggerBlink() {
 
 bool hasEnoughTimePassedSinceTheLastDetectedBeat() {
   return millis() - MIN_MILLIS_BETWEEN_BEATS > millisOfLastBeat; // http://black-electronics.com/blog/worried-about-millis-timer-overflow
+}
+
+
+float maxf(float a, float b) {
+  return a > b ? a : b;
 }
 
