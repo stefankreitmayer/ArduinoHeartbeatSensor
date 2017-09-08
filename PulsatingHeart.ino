@@ -9,100 +9,82 @@
 
 // Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
 #define MICROPHONE_PIN A0
-#define LAMP_PIN D2
+//#define LAMP_PIN D2
 
 
 // Samples per second
 #define SAMPLING_RATE 1000
 
-// Milliseconds per sample
-#define SAMPLING_DELAY 1000 / SAMPLING_RATE
-
 // Upper limit of blink frequency
-#define MIN_MILLIS_BETWEEN_BEATS 360
+#define MIN_MILLIS_BETWEEN_BEATS 190
 
 // Ensure that blinks never overlap (and that we ignore the audible click made by the closing relay)
 #define BLINK_DURATION (MIN_MILLIS_BETWEEN_BEATS-20)
 
 
-float rawInput;                   // Incoming raw data. Signal value can range from 0-1023
-float previousRawInput;           // Used for DC filter
-float previousFilteredInput;      // Used for DC filter
-float filteredInput;              // The pulse signal with the DC offset removed
-float amplitude;
-
-float peakEnvelope;               // Remembers the amplitude of the most recent peak (slow decay)
+float rawInput;              // Current input, assumed to be a rectified wave [0..<1023]
+float envSlow;               // Envelope over positive peaks (slow decay)
+float envMedium;             // Envelope over positive peaks (medium decay)
+float envFast;               // Envelope over positive peaks (fast decay)
 
 unsigned long millisOfLastBeat;
-unsigned long millisOfLastBlink;
 
 static unsigned long frameCount;
+
+bool envFastHasDippedSinceLastBlink;
 
 
 void setup() {
   pinMode(MICROPHONE_PIN, INPUT);
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(LAMP_PIN, OUTPUT);
-    Serial.begin(9600);
+  //  pinMode(LED_BUILTIN, OUTPUT);
+  //  pinMode(LAMP_PIN, OUTPUT);
+  //    Serial.begin(9600);
 
-//  Serial.begin(115200);
+  Serial.begin(115200);
+}
+
+
+
+void readInput() {
+  rawInput = analogRead(MICROPHONE_PIN);
+  envSlow   = maxf((envSlow * 0.9995), rawInput);
+  envMedium = maxf((envMedium * 0.999), rawInput);
+  envFast   = maxf((envFast * 0.995), rawInput);
 }
 
 
 void loop() {
   readInput();
-  peakEnvelope = maxf((peakEnvelope * 0.999), amplitude);
 
 
-  if (++frameCount % 3 == 0) {
-      Serial.println(rawInput);
-   //    Serial.println(amplitude);
-   //    Serial.println(filteredInputL);
-//    Serial.println(peakEnvelope);
+  if (++frameCount % 10 == 0) {
+    //        Serial.println(rawInput);
+      Serial.println(envSlow);
+    // Serial.println(envMedium);
+      Serial.println(envFast);
   }
 
-  if (peakEnvelope > 40 &&
-      hasEnoughTimePassedSinceTheLastDetectedBeat() &&
-      isPeakInSignal()) {
+
+  envFastHasDippedSinceLastBlink = envFastHasDippedSinceLastBlink || envFast < envMedium;
+
+  if (envSlow > 40 &&
+      envFast > envSlow * 0.9 &&
+      envFastHasDippedSinceLastBlink &&
+      hasEnoughTimePassedSinceTheLastDetectedBeat()) {
     registerBeat();
-    triggerBlink();
   }
-  bool lampState = millisOfLastBlink > millis() - BLINK_DURATION ? HIGH : LOW;
-  digitalWrite(LED_BUILTIN, lampState);
-  digitalWrite(LAMP_PIN, lampState);
+  bool lampState = millisOfLastBeat > millis() - BLINK_DURATION ? HIGH : LOW;
+  //  digitalWrite(LED_BUILTIN, lampState);
+  //  digitalWrite(LAMP_PIN, lampState);
 
-  delay(SAMPLING_DELAY);
-}
-
-
-void readInput() {
-  
-  // raw input
-  previousRawInput = rawInput;
-  rawInput = analogRead(MICROPHONE_PIN);
-
-  // filtered input
-  previousFilteredInput = filteredInput;
-  filteredInput = (int) (rawInput - previousRawInput + 0.99999 * previousFilteredInput); // remove DC offset
-
-  amplitude = abs(filteredInput);
-}
-
-
-bool isPeakInSignal() {
-  return previousFilteredInput > peakEnvelope * 0.8 &&
-         filteredInput < previousFilteredInput;
+  delayMicroseconds(1000000 / SAMPLING_RATE);
 }
 
 
 void registerBeat() {
   millisOfLastBeat = millis();
-}
-
-
-bool triggerBlink() {
-  millisOfLastBlink = millis();
-  Serial.println("peak!");
+  envFastHasDippedSinceLastBlink = false;
+  Serial.println(1000);
 }
 
 
