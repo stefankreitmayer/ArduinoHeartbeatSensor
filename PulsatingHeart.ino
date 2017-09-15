@@ -9,7 +9,8 @@
 
 // Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
 #define MICROPHONE_PIN A0
-//#define LAMP_PIN D2
+#define MANUAL_TAP_PIN A1
+#define LAMP_PIN 6
 
 
 // Samples per second
@@ -28,6 +29,7 @@ float envMedium;             // Envelope over positive peaks (medium decay)
 float envFast;               // Envelope over positive peaks (fast decay)
 
 unsigned long millisOfLastBeat;
+unsigned long millisOfLastManualTap;
 
 static unsigned long frameCount;
 
@@ -36,11 +38,11 @@ bool envFastHasDippedSinceLastBlink;
 
 void setup() {
   pinMode(MICROPHONE_PIN, INPUT);
-  //  pinMode(LED_BUILTIN, OUTPUT);
-  //  pinMode(LAMP_PIN, OUTPUT);
+  pinMode(MANUAL_TAP_PIN, INPUT);
+  pinMode(LAMP_PIN, OUTPUT);
   //    Serial.begin(9600);
 
-  Serial.begin(115200);
+//  Serial.begin(115200);
 }
 
 
@@ -54,28 +56,38 @@ void readInput() {
 
 
 void loop() {
+  if (digitalRead(MICROPHONE_PIN)) {
+    digitalWrite(LAMP_PIN, true);
+    millisOfLastManualTap = millis();
+    delay(BLINK_DURATION);
+    return;
+  }
+
+  //disable sound-to-light while tapping manually
+  if (millisOfLastManualTap > millis() - 3000) {
+    return;
+  }
+
   readInput();
 
-
-  if (++frameCount % 10 == 0) {
-    //        Serial.println(rawInput);
-      Serial.println(envSlow);
-    // Serial.println(envMedium);
-      Serial.println(envFast);
-  }
+    if (++frameCount % 10 == 0) {
+//          Serial.println(rawInput);
+//      Serial.println(envSlow);
+//   Serial.println(envMedium);
+//      Serial.println(envFast);
+    }
 
 
   envFastHasDippedSinceLastBlink = envFastHasDippedSinceLastBlink || envFast < envMedium;
 
-  if (envSlow > 40 &&
+  if (envSlow > 20 &&
       envFast > envSlow * 0.9 &&
       envFastHasDippedSinceLastBlink &&
       hasEnoughTimePassedSinceTheLastDetectedBeat()) {
     registerBeat();
   }
   bool lampState = millisOfLastBeat > millis() - BLINK_DURATION ? HIGH : LOW;
-  //  digitalWrite(LED_BUILTIN, lampState);
-  //  digitalWrite(LAMP_PIN, lampState);
+  digitalWrite(LAMP_PIN, lampState);
 
   delayMicroseconds(1000000 / SAMPLING_RATE);
 }
@@ -84,7 +96,7 @@ void loop() {
 void registerBeat() {
   millisOfLastBeat = millis();
   envFastHasDippedSinceLastBlink = false;
-  Serial.println(1000);
+//    Serial.println(1000);
 }
 
 
