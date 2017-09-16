@@ -22,11 +22,18 @@
 // Ensure that blinks never overlap (and that we ignore the audible click made by the closing relay)
 #define BLINK_DURATION (MIN_MILLIS_BETWEEN_BEATS-20)
 
-
+float rawAudioInput;
+float rawPulseInput;
 float rawInput;              // Current input, assumed to be a rectified wave [0..<1023]
-float envSlow;               // Envelope over positive peaks (slow decay)
-float envMedium;             // Envelope over positive peaks (medium decay)
-float envFast;               // Envelope over positive peaks (fast decay)
+float envAudioPresence;          // Envelope over positive audio peaks (slow decay) - to test whether audio is coming in
+
+
+float envPulsePresenceUpper;
+float envPulsePresenceLower;
+
+float envSlow;               // Envelope over positive signal peaks (slow decay)
+float envMedium;             // Envelope over positive signal peaks (medium decay)
+float envFast;               // Envelope over positive signal peaks (fast decay)
 
 unsigned long millisOfLastBeat;
 
@@ -34,22 +41,31 @@ static unsigned long frameCount;
 
 bool envFastHasDippedSinceLastBlink;
 
+bool lampState;
+
 
 void setup() {
   pinMode(AUDIO_PIN, INPUT);
   pinMode(LAMP_PIN, OUTPUT);
-//  Serial.begin(9600);
+  //  Serial.begin(9600);
 
-    Serial.begin(115200);
+//  Serial.begin(115200);
 }
 
 
 
 void readInput() {
-  rawInput = analogRead(AUDIO_PIN);
-  envSlow   = maxf((envSlow * 0.9995), rawInput);
-  envMedium = maxf((envMedium * 0.999), rawInput);
-  envFast   = maxf((envFast * 0.995), rawInput);
+  rawAudioInput = analogRead(AUDIO_PIN);
+  envAudioPresence   = maxf(envAudioPresence * 0.998, rawAudioInput);
+
+  rawPulseInput = analogRead(PULSE_PIN);
+  envPulsePresenceUpper   = maxf(envPulsePresenceUpper * 0.9995, rawPulseInput);
+  envPulsePresenceLower   = minf(envPulsePresenceLower + 0.3, rawPulseInput);
+
+  rawInput = haveAudioSignal() ? rawAudioInput : rawPulseInput; // use audio if available, otherwise use pulse
+  envSlow   = maxf(envSlow * 0.9995, rawInput);
+  envMedium = maxf(envMedium * 0.999, rawInput);
+  envFast   = maxf(envFast * 0.995, rawInput);
 }
 
 
@@ -57,23 +73,22 @@ void loop() {
   readInput();
 
   if (++frameCount % 10 == 0) {
-    Serial.println(rawInput);
-    //      Serial.println(envSlow);
-    //   Serial.println(envMedium);
+    //  Serial.println(rawInput);
+//          Serial.println(rawPulseInput);
+    //          Serial.println(envSlow);
+    //          Serial.println(envAudioPresence);
+    //          Serial.println(haveAudioSignal());
+    //            Serial.println(havePulseSignal());
+    //            Serial.println();
+    //       Serial.println(envPulsePresenceUpper);
+    //       Serial.println(envPulsePresenceLower);
+    //       Serial.println(envPulsePresenceUpper - envPulsePresenceLower);
     //      Serial.println(envFast);
+//  Serial.println(shouldLampBeOn() * 100);
   }
 
+  digitalWrite(LAMP_PIN, shouldLampBeOn() ? HIGH : LOW);
 
-  envFastHasDippedSinceLastBlink = envFastHasDippedSinceLastBlink || envFast < envMedium;
-
-  if (envSlow > 20 &&
-      envFast > envSlow * 0.9 &&
-      envFastHasDippedSinceLastBlink &&
-      hasEnoughTimePassedSinceTheLastDetectedBeat()) {
-    registerBeat();
-  }
-  bool lampState = millisOfLastBeat > millis() - BLINK_DURATION ? HIGH : LOW;
-  digitalWrite(LAMP_PIN, lampState);
 
   delayMicroseconds(1000000 / SAMPLING_RATE);
 }
@@ -95,3 +110,33 @@ float maxf(float a, float b) {
   return a > b ? a : b;
 }
 
+float minf(float a, float b) {
+  return a < b ? a : b;
+}
+
+bool haveAudioSignal() {
+  return envAudioPresence > 20;
+}
+
+bool havePulseSignal() {
+  return envPulsePresenceUpper - envPulsePresenceLower > 60;
+}
+
+bool haveAnyInputSignal() {
+  return haveAudioSignal() || havePulseSignal();
+}
+
+bool shouldLampBeOn() {
+  if (haveAnyInputSignal()) {
+    envFastHasDippedSinceLastBlink = envFastHasDippedSinceLastBlink || envFast < envMedium;
+    if (envSlow > 20 &&
+        envFast > envSlow * 0.9 &&
+        envFastHasDippedSinceLastBlink &&
+        hasEnoughTimePassedSinceTheLastDetectedBeat()) {
+      registerBeat();
+    }
+    return millisOfLastBeat > millis() - BLINK_DURATION;
+  } else {
+    return millis() % 1200 < 380;
+  }
+}
